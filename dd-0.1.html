@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<!--
+    =====================================================================
+    DD v0.1 - ASCII Art Flag Demo (Klemmbaustein Kosmokratie)
+
+    SPDX-License-Identifier: CC0-1.0
+    License: CC0 1.0 Universal (Public Domain Dedication) - applies to THIS CODE.
+    To the extent possible under law, the author has waived all copyright
+    and related rights to this work. https://creativecommons.org/publicdomain/zero/1.0/
+
+    Rendering INSPIRED BY AAlib (the classic ASCII art library by Jan
+    Hubicka et al., https://aa-project.sourceforge.net/aalib/) - no AAlib
+    code is used, only the luminance-to-glyph idea, reimplemented from
+    scratch for the browser.
+
+    Music: procedurally generated chiptune (WebAudio oscillators + noise),
+    composed in code, no external audio assets - CC0 like the rest.
+
+    Third-party fonts, data & services (loaded at runtime):
+    - Space Mono font ............ OFL-1.1 .... Google Fonts (SIL Open Font License 1.1)
+    - Flag PNGs & country list ... Public Domain https://flagcdn.com (flagpedia.net)
+    - CORS fallback proxy ........ MIT (service) https://api.allorigins.win
+    =====================================================================
+-->
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>DD v0.1 — ASCII Flag Demo</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        html, body { margin: 0; height: 100%; background: #05060a; overflow: hidden; font-family: 'Space Mono', monospace; color: #cfe; }
+
+        #stage { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+
+        /* Boot-Screen (noetig fuer Audio-Autoplay + stilecht) */
+        #boot { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: #05060a; cursor: pointer; }
+        #boot h1 { margin: 0; font-size: 42px; letter-spacing: 12px; color: #00ffff; text-shadow: 0 0 30px rgba(0,255,255,0.8); }
+        #boot p { margin: 0; font-size: 11px; letter-spacing: 3px; color: #667788; text-transform: uppercase; animation: blink 1s steps(1) infinite; }
+        #boot small { font-size: 9px; letter-spacing: 2px; color: #334455; text-transform: uppercase; }
+
+        /* Kopfzeile */
+        #head { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: #00ffff; text-shadow: 0 0 12px rgba(0,255,255,0.6); }
+        #head .cursor { display: inline-block; width: 8px; background: #00ffff; animation: blink 0.8s steps(1) infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* Die ASCII-Leinwand */
+        #aa { font-size: 12px; line-height: 9px; letter-spacing: 0; white-space: pre; font-weight: 700;
+              text-shadow: 0 0 6px rgba(255,255,255,0.15); user-select: none; }
+        #aa .row { display: block; will-change: transform; }
+
+        /* Fusszeile / Progress */
+        #foot { font-size: 10px; letter-spacing: 2px; color: #667788; text-transform: uppercase; }
+        #foot .val { color: #00ffcc; }
+        #bar { width: 320px; height: 3px; background: rgba(0,255,255,0.15); margin-top: 8px; }
+        #bar div { height: 100%; width: 0%; background: #00ffff; box-shadow: 0 0 8px rgba(0,255,255,0.8); }
+
+        /* Demoszene-Scroller */
+        #scroller { position: fixed; bottom: 12px; left: 0; width: 100%; overflow: hidden; font-size: 12px; letter-spacing: 2px; color: #d400ff; text-shadow: 0 0 10px rgba(212,0,255,0.7); white-space: nowrap; pointer-events: none; }
+        #scroller span { display: inline-block; padding-left: 100vw; animation: scroll 28s linear infinite; }
+        @keyframes scroll { to { transform: translateX(-100%); } }
+
+        /* CRT-Look */
+        #crt { position: fixed; inset: 0; pointer-events: none; z-index: 5;
+               background: repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 3px); }
+        #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 6;
+               background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%); }
+
+        /* Hinweis */
+        #hint { position: fixed; top: 14px; right: 18px; font-size: 9px; letter-spacing: 1px; color: #445566; text-transform: uppercase; z-index: 7; }
+    </style>
+</head>
+<body>
+
+    <div id="boot">
+        <h1>DD</h1>
+        <p>PRESS ANY KEY OR CLICK TO BOOT — AUDIO ON</p>
+        <small>ASCII FLAG DEMO v0.1 // CC0 // KLEMMBAUSTEIN KOSMOKRATIE</small>
+    </div>
+
+    <div id="stage">
+        <div id="head">STANDBY<span class="cursor">&nbsp;</span></div>
+        <div id="aa"></div>
+        <div id="foot">
+            NEXT IN <span class="val" id="count">--</span>s &nbsp;//&nbsp; <span class="val" id="idx">0</span>/<span class="val" id="total">0</span> SHOWN
+            <div id="bar"><div id="bar-fill"></div></div>
+        </div>
+    </div>
+
+    <div id="scroller"><span>*** DD v0.1 *** KLEMMBAUSTEIN KOSMOKRATIE PRESENTS: EVERY ISO-3166 FLAG AS PURE ASCII *** RENDERING INSPIRED BY THE LEGENDARY AALIB *** CHIPTUNE GENERATED LIVE IN WEBAUDIO *** CODE AND MUSIC ARE CC0 / PUBLIC DOMAIN *** FLAGS BY FLAGCDN.COM *** GREETINGS TO ALL BRICK BUILDERS AND TERMINAL ROMANTICS *** SPACE = PAUSE / ENTER = NEXT / M = MUTE ***</span></div>
+
+    <div id="crt"></div>
+    <div id="vignette"></div>
+    <div id="hint">SPACE = PAUSE // ENTER = NEXT // M = MUTE</div>
+
+    <script>
+        // --------------------------------------------------------
+        // KATALOG (wie in der Voxel-Engine, nur Nationen + gb-*)
+        // --------------------------------------------------------
+        const cdnUrl = (iso) => `https://flagcdn.com/w160/${iso}.png`;
+        const FALLBACK = { de:"Germany", fr:"France", mx:"Mexico", jp:"Japan", br:"Brazil",
+                           ua:"Ukraine", se:"Sweden", ch:"Switzerland", th:"Thailand", ng:"Nigeria" };
+        const isoFilter = (c) => /^[a-z]{2}$/.test(c) || /^gb-/.test(c);
+
+        async function loadNations() {
+            try {
+                const r = await fetch('https://flagcdn.com/en/codes.json', { cache: "force-cache" });
+                const codes = await r.json();
+                const list = Object.entries(codes).filter(([c]) => isoFilter(c));
+                if (list.length < 50) throw new Error("short");
+                return list;
+            } catch (e) { return Object.entries(FALLBACK); }
+        }
+
+        // --------------------------------------------------------
+        // BILD-LADER (mit Proxy-Fallback, wie gehabt)
+        // --------------------------------------------------------
+        const imgCache = {};
+        const loadImg = (src) => new Promise((res, rej) => {
+            const img = new Image(); img.crossOrigin = 'anonymous';
+            img.onload = () => res(img); img.onerror = rej; img.src = src;
+        });
+        async function loadFlag(url) {
+            if (imgCache[url]) return imgCache[url];
+            let img;
+            try { img = await loadImg(url); }
+            catch (e) { img = await loadImg(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`); }
+            imgCache[url] = img;
+            return img;
+        }
+
+        // --------------------------------------------------------
+        // AA-RENDERER: Luminanz -> Glyphe, Pixel -> Farbe
+        // (Inspired by AAlib - reimplemented from scratch)
+        // --------------------------------------------------------
+        const RAMP = " .·:;=+*x%#@"; // dunkel -> hell
+        const CHAR_ASPECT = 0.62;      // Breite/Hoehe einer Monospace-Zelle
+
+        function sampleAscii(img, W) {
+            const iw = img.naturalWidth || 300, ih = img.naturalHeight || 200;
+            const H = Math.max(4, Math.round(W * (ih / iw) * CHAR_ASPECT));
+            const cv = document.createElement('canvas');
+            cv.width = W; cv.height = H;
+            const ctx = cv.getContext('2d', { willReadFrequently: true });
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, W, H);
+            const px = ctx.getImageData(0, 0, W, H).data;
+
+            const rows = [];
+            for (let y = 0; y < H; y++) {
+                const cells = [];
+                for (let x = 0; x < W; x++) {
+                    const i = (y * W + x) * 4;
+                    const a = px[i + 3];
+                    if (a < 100) { cells.push(null); continue; } // Transparenz = Luft (Nepal!)
+                    const r = px[i], g = px[i+1], b = px[i+2];
+                    const lum = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
+                    const ch = RAMP[Math.min(RAMP.length - 1, Math.round(lum * (RAMP.length - 1)))];
+                    cells.push({ ch, css: `rgb(${r},${g},${b})` });
+                }
+                rows.push(cells);
+            }
+            return rows;
+        }
+
+        // --------------------------------------------------------
+        // DOM-RENDER mit Dissolve-Effekt
+        // --------------------------------------------------------
+        const aaEl = document.getElementById('aa');
+
+        function renderAscii(rows) {
+            aaEl.innerHTML = '';
+            const spans = [];
+            rows.forEach(cells => {
+                const line = document.createElement('span');
+                line.className = 'row';
+                cells.forEach(c => {
+                    const s = document.createElement('span');
+                    if (c) { s.textContent = c.ch; s.style.color = c.css; s.style.visibility = 'hidden'; spans.push(s); }
+                    else { s.innerHTML = '&nbsp;'; }
+                    line.appendChild(s);
+                });
+                aaEl.appendChild(line);
+            });
+            // Dissolve: Zeichen in zufaelliger Reihenfolge einblenden
+            for (let i = spans.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [spans[i], spans[j]] = [spans[j], spans[i]];
+            }
+            const chunk = Math.max(1, Math.floor(spans.length / 30));
+            let k = 0;
+            (function reveal() {
+                for (let n = 0; n < chunk && k < spans.length; n++, k++) spans[k].style.visibility = 'visible';
+                if (k < spans.length) requestAnimationFrame(reveal);
+            })();
+        }
+
+        // --------------------------------------------------------
+        // WELLEN-ANIMATION (Nicken an die Voxel-Windphysik)
+        // --------------------------------------------------------
+        let t = 0;
+        (function wave() {
+            requestAnimationFrame(wave);
+            t += 0.04;
+            const lines = aaEl.children;
+            for (let y = 0; y < lines.length; y++) {
+                lines[y].style.transform = `translateX(${Math.sin(t + y * 0.25) * 4}px)`;
+            }
+        })();
+
+        // --------------------------------------------------------
+        // CHIPTUNE-ENGINE (WebAudio, komplett prozedural, CC0)
+        // 125 BPM, Am-F-C-G, Square-Arp + Triangle-Bass + Noise-Drums
+        // --------------------------------------------------------
+        let ac = null, master = null, musicOn = true;
+        const BPM = 125, SPB = 60 / BPM, STEP16 = SPB / 4;
+
+        // Akkorde als Frequenzen (A3/C4/E4 usw.)
+        const CHORDS = [
+            [220.00, 261.63, 329.63],   // Am
+            [174.61, 220.00, 261.63],   // F
+            [261.63, 329.63, 392.00],   // C
+            [196.00, 246.94, 293.66]    // G
+        ];
+        const BASS = [110.00, 87.31, 130.81, 98.00]; // A2 F2 C3 G2
+        const ARP_MASK = [1,0,1,1, 0,1,1,0, 1,0,1,1, 0,1,0,1]; // Groove pro 16 Steps
+
+        function initAudio() {
+            ac = new (window.AudioContext || window.webkitAudioContext)();
+            master = ac.createGain();
+            master.gain.value = 0.16;
+
+            // Retro-Echo: punktiertes Achtel-Delay mit Feedback
+            const delay = ac.createDelay(1.0);
+            delay.delayTime.value = STEP16 * 6;
+            const fb = ac.createGain(); fb.gain.value = 0.3;
+            const wet = ac.createGain(); wet.gain.value = 0.25;
+            master.connect(delay); delay.connect(fb); fb.connect(delay);
+            delay.connect(wet);
+            master.connect(ac.destination);
+            wet.connect(ac.destination);
+
+            // Noise-Buffer fuer Drums
+            const nb = ac.createBuffer(1, ac.sampleRate * 0.2, ac.sampleRate);
+            const nd = nb.getChannelData(0);
+            for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+            initAudio.noise = nb;
+
+            scheduleLoop();
+        }
+
+        function tone(freq, when, dur, type, vol) {
+            const o = ac.createOscillator(), g = ac.createGain();
+            o.type = type; o.frequency.value = freq;
+            g.gain.setValueAtTime(vol, when);
+            g.gain.exponentialRampToValueAtTime(0.001, when + dur);
+            o.connect(g); g.connect(master);
+            o.start(when); o.stop(when + dur + 0.02);
+        }
+
+        function drum(when, kind) {
+            if (kind === 'kick') {
+                const o = ac.createOscillator(), g = ac.createGain();
+                o.type = 'sine';
+                o.frequency.setValueAtTime(150, when);
+                o.frequency.exponentialRampToValueAtTime(40, when + 0.12);
+                g.gain.setValueAtTime(0.9, when);
+                g.gain.exponentialRampToValueAtTime(0.001, when + 0.14);
+                o.connect(g); g.connect(master);
+                o.start(when); o.stop(when + 0.16);
+            } else { // hat
+                const s = ac.createBufferSource(), g = ac.createGain(), f = ac.createBiquadFilter();
+                s.buffer = initAudio.noise;
+                f.type = 'highpass'; f.frequency.value = 6000;
+                g.gain.setValueAtTime(0.25, when);
+                g.gain.exponentialRampToValueAtTime(0.001, when + 0.05);
+                s.connect(f); f.connect(g); g.connect(master);
+                s.start(when); s.stop(when + 0.06);
+            }
+        }
+
+        let nextNoteTime = 0, step = 0;
+        function scheduleLoop() {
+            nextNoteTime = ac.currentTime + 0.1;
+            setInterval(() => {
+                if (!musicOn) { nextNoteTime = Math.max(nextNoteTime, ac.currentTime + 0.1); return; }
+                while (nextNoteTime < ac.currentTime + 0.15) {
+                    const bar = Math.floor(step / 16) % 4;
+                    const s16 = step % 16;
+                    const chord = CHORDS[bar];
+
+                    // Lead-Arp (Square)
+                    if (ARP_MASK[s16]) {
+                        const n = chord[(step >> 1) % 3] * (s16 % 8 === 6 ? 2 : 1); // gelegentlicher Oktav-Kick
+                        tone(n, nextNoteTime, STEP16 * 1.6, 'square', 0.30);
+                    }
+                    // Bass (Triangle, 8tel)
+                    if (s16 % 2 === 0) {
+                        tone(BASS[bar] * (s16 % 8 === 4 ? 2 : 1), nextNoteTime, STEP16 * 1.8, 'triangle', 0.55);
+                    }
+                    // Drums
+                    if (s16 % 4 === 0) drum(nextNoteTime, 'kick');
+                    if (s16 % 4 === 2) drum(nextNoteTime, 'hat');
+
+                    nextNoteTime += STEP16;
+                    step++;
+                }
+            }, 40);
+        }
+
+        // --------------------------------------------------------
+        // DEMO-LOOP: zufaellige Reihenfolge, ohne Wiederholung
+        // --------------------------------------------------------
+        const PERIOD = 6; // Sekunden pro Flagge
+        const headEl = document.getElementById('head');
+        const countEl = document.getElementById('count');
+        const idxEl = document.getElementById('idx');
+        const totalEl = document.getElementById('total');
+        const barEl = document.getElementById('bar-fill');
+
+        let deck = [], deckPos = 0, shown = 0, paused = false, remaining = PERIOD, booted = false;
+
+        function shuffle(a) {
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        }
+
+        function typeHead(text) {
+            headEl.innerHTML = '';
+            const cur = document.createElement('span');
+            cur.className = 'cursor';
+            cur.innerHTML = '&nbsp;';
+            let i = 0;
+            (function stepT() {
+                headEl.textContent = text.slice(0, ++i);
+                headEl.appendChild(cur);
+                if (i < text.length) setTimeout(stepT, 22);
+            })();
+        }
+
+        function aaWidth() {
+            return Math.max(40, Math.min(96, Math.floor(window.innerWidth * 0.82 / 7.2)));
+        }
+
+        async function nextFlag() {
+            if (deckPos >= deck.length) { shuffle(deck); deckPos = 0; }
+            const [iso, name] = deck[deckPos++];
+            try {
+                const img = await loadFlag(cdnUrl(iso));
+                renderAscii(sampleAscii(img, aaWidth()));
+                typeHead(`${iso.toUpperCase()} — ${name}`);
+                shown++;
+                idxEl.textContent = shown;
+            } catch (e) {
+                console.warn('Skip (nicht ladbar):', iso, e);
+                nextFlag(); // einfach die naechste ziehen
+                return;
+            }
+            remaining = PERIOD;
+        }
+
+        // Timer & Progress
+        setInterval(() => {
+            if (paused || !booted) return;
+            remaining -= 0.1;
+            if (remaining <= 0) { nextFlag(); return; }
+            countEl.textContent = remaining.toFixed(0);
+            barEl.style.width = `${(1 - remaining / PERIOD) * 100}%`;
+        }, 100);
+
+        // --------------------------------------------------------
+        // BOOT (User-Geste -> Audio erlaubt) & Steuerung
+        // --------------------------------------------------------
+        function boot() {
+            if (booted) return;
+            booted = true;
+            document.getElementById('boot').remove();
+            initAudio();
+            loadNations().then(list => {
+                deck = shuffle(list.slice());
+                totalEl.textContent = deck.length;
+                nextFlag();
+            });
+        }
+
+        document.getElementById('boot').addEventListener('click', boot);
+
+        window.addEventListener('keydown', (e) => {
+            if (!booted) { boot(); return; }
+            if (e.code === 'Space') { paused = !paused; e.preventDefault(); typeHead(paused ? 'PAUSED' : 'RESUME'); }
+            if (e.code === 'Enter' || e.code === 'ArrowRight') nextFlag();
+            if (e.code === 'KeyM') { musicOn = !musicOn; typeHead(musicOn ? 'MUSIC ON' : 'MUSIC OFF'); }
+        });
+        window.addEventListener('click', () => { if (booted) nextFlag(); });
+    </script>
+</body>
+</html>

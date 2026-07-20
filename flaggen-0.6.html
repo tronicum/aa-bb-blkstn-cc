@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<!--
+    =====================================================================
+    Baumeister - Universal Voxel Flag Engine v0.6 (Klemmbaustein Kosmokratie)
+
+    SPDX-License-Identifier: CC0-1.0
+    License: CC0 1.0 Universal (Public Domain Dedication) - applies to THIS CODE.
+    To the extent possible under law, the author has waived all copyright
+    and related rights to this work. https://creativecommons.org/publicdomain/zero/1.0/
+
+    NOTE: Emblems and logos rendered at runtime (UN system, NASA, Red Cross,
+    Olympic rings, airline logos) are protected marks of their respective
+    organizations. The CC0 dedication does not extend to them.
+
+    Third-party libraries, fonts, data & services (loaded at runtime):
+    - three.js r128 .............. MIT ........ https://cdnjs.cloudflare.com (threejs.org)
+    - OrbitControls (three r128) . MIT ........ https://cdn.jsdelivr.net (three.js examples)
+    - Space Mono font ............ OFL-1.1 .... Google Fonts (SIL Open Font License 1.1)
+    - Flag PNGs & country list ... Public Domain https://flagcdn.com (flagpedia.net)
+    - Org flag images ............ various* .... https://commons.wikimedia.org (Special:FilePath)
+    - Airline logos by IATA ...... trademarks* . https://images.daisycon.io
+    - CORS fallback proxy ........ MIT (service) https://api.allorigins.win
+      (* see NOTE above)
+    =====================================================================
+-->
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Baumeister - Universal Voxel Flag Engine v0.6</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        body { margin: 0; background: #0a0b10; overflow: hidden; font-family: 'Space Mono', monospace; color: #fff; }
+
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; display: flex; flex-direction: column; gap: 15px; max-height: calc(100vh - 40px); overflow-y: auto; scrollbar-width: thin; }
+
+        .panel { background: rgba(15, 20, 25, 0.85); backdrop-filter: blur(10px); border: 1px solid rgba(0, 255, 255, 0.2); padding: 25px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); width: 340px; box-sizing: content-box; }
+
+        h1 { margin: 0 0 5px 0; font-size: 20px; color: #fff; text-transform: uppercase; letter-spacing: 2px; }
+        h2 { margin: 0 0 25px 0; font-size: 11px; color: #00ffff; letter-spacing: 2px; text-transform: uppercase; }
+
+        .input-group { margin-bottom: 20px; }
+        label { display: block; font-size: 10px; color: #8899aa; margin-bottom: 8px; letter-spacing: 1px; }
+        label .live-val { color: #00ffcc; font-weight: bold; }
+
+        /* Picker & Inputs */
+        select, input[type="text"] { width: 100%; box-sizing: border-box; background: rgba(0, 0, 0, 0.5); color: #fff; border: 1px solid rgba(0, 255, 255, 0.4); padding: 12px; font-family: 'Space Mono', monospace; font-size: 13px; font-weight: bold; border-radius: 6px; outline: none; transition: all 0.2s; appearance: none; }
+        select { cursor: pointer; }
+        select:hover, select:focus, input[type="text"]:focus { border-color: #00ffff; box-shadow: 0 0 15px rgba(0,255,255,0.2); }
+        select option { background: #0f1419; color: #fff; padding: 10px; }
+        select optgroup { background: #0f1419; color: #00ffff; font-style: normal; }
+        input[type="text"]::placeholder { color: #556677; font-weight: normal; }
+
+        .select-wrapper { position: relative; }
+        .select-wrapper::after { content: '▼'; position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #00ffff; pointer-events: none; font-size: 10px; }
+
+        .row { display: flex; gap: 8px; }
+        .btn { background: rgba(0, 255, 255, 0.1); color: #00ffff; border: 1px solid rgba(0, 255, 255, 0.4); padding: 12px 16px; font-family: 'Space Mono', monospace; font-size: 12px; font-weight: bold; border-radius: 6px; cursor: pointer; letter-spacing: 1px; transition: all 0.2s; white-space: nowrap; }
+        .btn:hover { border-color: #00ffff; box-shadow: 0 0 15px rgba(0,255,255,0.3); background: rgba(0, 255, 255, 0.2); }
+        .btn.wide { width: 100%; }
+
+        /* Slider */
+        input[type="range"] { width: 100%; appearance: none; -webkit-appearance: none; height: 4px; background: rgba(0,255,255,0.25); border-radius: 2px; outline: none; cursor: pointer; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #00ffff; box-shadow: 0 0 10px rgba(0,255,255,0.8); cursor: pointer; }
+        input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border: none; border-radius: 50%; background: #00ffff; box-shadow: 0 0 10px rgba(0,255,255,0.8); cursor: pointer; }
+
+        #stats { font-size: 11px; color: #667788; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; line-height: 1.8; }
+        .stat-val { color: #00ffcc; font-weight: bold; float: right; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* Drag & Drop Overlay */
+        #drop-overlay { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; background: rgba(0, 20, 25, 0.85); backdrop-filter: blur(6px); border: 3px dashed #00ffff; box-sizing: border-box; font-size: 22px; letter-spacing: 3px; color: #00ffff; text-transform: uppercase; pointer-events: none; }
+        #drop-overlay.active { display: flex; }
+
+        /* OSS Credits Bauchbinde */
+        #credits { position: fixed; right: 20px; bottom: 20px; z-index: 20; font-size: 10px; letter-spacing: 1px; }
+        #credits summary { list-style: none; cursor: pointer; display: inline-block; float: right; background: rgba(15, 20, 25, 0.85); backdrop-filter: blur(10px); border: 1px solid rgba(0, 255, 255, 0.3); color: #00ffff; padding: 7px 14px; border-radius: 6px; text-transform: uppercase; transition: all 0.2s; user-select: none; }
+        #credits summary::-webkit-details-marker { display: none; }
+        #credits summary:hover { border-color: #00ffff; box-shadow: 0 0 15px rgba(0,255,255,0.2); }
+        #credits .credits-panel { clear: both; margin-bottom: 10px; background: rgba(15, 20, 25, 0.92); backdrop-filter: blur(10px); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 8px; padding: 15px 18px; width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+        #credits[open] .credits-panel { animation: creditsIn 0.15s ease-out; }
+        @keyframes creditsIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        #credits .credits-head { color: #667788; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-bottom: 8px; }
+        #credits .credits-head a { display: inline; color: #00ffcc; }
+        #credits a { display: flex; justify-content: space-between; gap: 15px; color: #8899aa; text-decoration: none; padding: 4px 0; }
+        #credits a:hover { color: #00ffff; }
+        #credits .lic { color: #00ffcc; white-space: nowrap; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <div class="panel">
+            <h1>Global Voxels</h1>
+            <h2>Universal Voxel Flag Engine</h2>
+
+            <div class="input-group">
+                <label>NATIONS / ORGS / AIRLINES (TYPE TO SEARCH)</label>
+                <div class="select-wrapper">
+                    <select id="iso-picker">
+                        <!-- Wird per JS befüllt -->
+                    </select>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>ANY AIRLINE (IATA CODE) OR IMAGE URL</label>
+                <div class="row">
+                    <input type="text" id="custom-input" placeholder="z.B. X3 oder https://…/flagge.svg">
+                    <button class="btn" id="custom-go">GO</button>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>LOCAL IMPORT — SVG / PNG / JPG (OR DROP ANYWHERE)</label>
+                <button class="btn wide" id="file-btn">⇪ IMPORT FILE</button>
+                <input type="file" id="file-input" accept=".svg,.png,.jpg,.jpeg,.gif,.webp,image/*" style="display:none;">
+            </div>
+
+            <div class="input-group">
+                <label>RESOLUTION — <span class="live-val" id="res-val">30</span> BLOCKS WIDE</label>
+                <input type="range" id="res-slider" min="12" max="80" step="2" value="30">
+            </div>
+
+            <div class="input-group">
+                <label>BLOCK SIZE — <span class="live-val" id="size-val">1.0</span>×</label>
+                <input type="range" id="size-slider" min="0.4" max="2.5" step="0.1" value="1">
+            </div>
+
+            <div id="stats">
+                SOURCE ID: <span id="stat-iso" class="stat-val">DE</span><br>
+                ORIGIN: <span id="stat-src" class="stat-val">FLAGCDN</span><br>
+                GRID: <span id="stat-grid" class="stat-val">--</span><br>
+                VOXEL COUNT: <span id="block-count" class="stat-val">0</span><br>
+                SIMULATION: <span id="stat-sim" class="stat-val" style="color:#00ff99;">BOOT</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="drop-overlay">⇪ DROP SVG / IMAGE TO VOXELIZE</div>
+
+    <details id="credits">
+        <summary>&#9878; OSS CREDITS</summary>
+        <div class="credits-panel">
+            <div class="credits-head">THIS WORK: <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0 — PUBLIC DOMAIN</a></div>
+            <a href="https://threejs.org/" target="_blank" rel="noopener"><span>three.js r128</span><span class="lic">MIT</span></a>
+            <a href="https://github.com/mrdoob/three.js/blob/r128/examples/js/controls/OrbitControls.js" target="_blank" rel="noopener"><span>OrbitControls</span><span class="lic">MIT</span></a>
+            <a href="https://flagpedia.net/download/api" target="_blank" rel="noopener"><span>flagcdn Flag PNGs + ISO List</span><span class="lic">PUBLIC DOMAIN</span></a>
+            <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener"><span>Org Flags (Wikimedia Commons)</span><span class="lic">VARIOUS*</span></a>
+            <a href="https://www.daisycon.com/" target="_blank" rel="noopener"><span>Airline Logos (Daisycon API)</span><span class="lic">TRADEMARKS*</span></a>
+            <a href="https://fonts.google.com/specimen/Space+Mono" target="_blank" rel="noopener"><span>Space Mono Font</span><span class="lic">OFL-1.1</span></a>
+            <a href="https://allorigins.win/" target="_blank" rel="noopener"><span>AllOrigins CORS Proxy</span><span class="lic">MIT</span></a>
+        </div>
+    </details>
+
+    <script>
+        // --------------------------------------------------------
+        // ENGINE SETUP
+        // --------------------------------------------------------
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x0a0b10, 0.005);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+        camera.position.set(10, 5, 50);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        scene.add(new THREE.AmbientLight(0x404040, 1.5));
+
+        const spotLight = new THREE.SpotLight(0xffffff, 1.5);
+        spotLight.position.set(20, 50, 40);
+        spotLight.angle = Math.PI / 4;
+        spotLight.penumbra = 0.5;
+        spotLight.castShadow = true;
+        spotLight.shadow.mapSize.width = 2048;
+        spotLight.shadow.mapSize.height = 2048;
+        scene.add(spotLight);
+
+        const backLight = new THREE.DirectionalLight(0xaabbff, 0.8);
+        backLight.position.set(-20, 20, -20);
+        scene.add(backLight);
+
+        const planeGeo = new THREE.PlaneGeometry(200, 200);
+        const planeMat = new THREE.MeshStandardMaterial({ color: 0x050508, roughness: 0.1, metalness: 0.8 });
+        const plane = new THREE.Mesh(planeGeo, planeMat);
+        plane.rotation.x = -Math.PI / 2;
+        plane.position.y = -15;
+        plane.receiveShadow = true;
+        scene.add(plane);
+
+        // --------------------------------------------------------
+        // QUELLEN-KATALOG: Nationen + Orgs + Airlines
+        // --------------------------------------------------------
+        // WICHTIG: Direkte upload.wikimedia.org Thumb-URLs verwenden!
+        // Special:FilePath liefert einen Redirect, der NICHT CORS-sauber ist ->
+        // <img crossOrigin> schlaegt fehl und das Canvas-Sampling bricht ab.
+        const wmThumb = (hash, file) => `https://upload.wikimedia.org/wikipedia/commons/thumb/${hash}/${file}/330px-${file}.png`;
+        const iataUrl = (code) => `https://images.daisycon.io/airline/?width=320&height=200&color=ffffff&iata=${code.toUpperCase()}`;
+        const cdnUrl = (iso) => `https://flagcdn.com/w160/${iso}.png`;
+
+        const ORGS = [
+            ["UN",       "United Nations",  cdnUrl('un'),                                       "FLAGCDN"],
+            ["UNESCO",   "UNESCO",          wmThumb('d/d0', 'Flag_of_UNESCO.svg'),              "WIKIMEDIA"],
+            ["WHO",      "WHO",             wmThumb('8/89', 'Flag_of_WHO.svg'),                 "WIKIMEDIA"],
+            ["UNICEF",   "UNICEF",          wmThumb('d/d1', 'Flag_of_UNICEF.svg'),              "WIKIMEDIA"],
+            ["NATO",     "NATO",            wmThumb('3/37', 'Flag_of_NATO.svg'),                "WIKIMEDIA"],
+            ["NASA",     "NASA",            wmThumb('5/56', 'NASA_Logo_Flag.svg'),              "WIKIMEDIA"],
+            ["ICRC",     "Red Cross",       wmThumb('1/1a', 'Flag_of_the_Red_Cross.svg'),       "WIKIMEDIA"],
+            ["IOC",      "Olympic Movement", wmThumb('a/a7', 'Olympic_flag.svg'),               "WIKIMEDIA"],
+            ["EU",       "European Union",  cdnUrl('eu'),                                       "FLAGCDN"]
+        ];
+
+        const AIRLINES = [
+            ["AA","American Airlines"], ["AC","Air Canada"], ["AF","Air France"], ["AY","Finnair"],
+            ["BA","British Airways"], ["CX","Cathay Pacific"], ["DL","Delta Air Lines"], ["EK","Emirates"],
+            ["EW","Eurowings"], ["EY","Etihad Airways"], ["FR","Ryanair"], ["IB","Iberia"],
+            ["JL","Japan Airlines"], ["KL","KLM"], ["LH","Lufthansa"], ["LX","Swiss"],
+            ["NH","ANA All Nippon"], ["NZ","Air New Zealand"], ["OS","Austrian Airlines"], ["QF","Qantas"],
+            ["QR","Qatar Airways"], ["SK","SAS Scandinavian"], ["SQ","Singapore Airlines"], ["TK","Turkish Airlines"],
+            ["U2","easyJet"], ["UA","United Airlines"], ["WN","Southwest"], ["X3","TUIfly"]
+        ];
+
+        const FALLBACK_NATIONS = {
+            at:"Austria", be:"Belgium", bg:"Bulgaria", td:"Chad", ci:"Côte d'Ivoire",
+            dk:"Denmark", ee:"Estonia", fi:"Finland", fr:"France", ga:"Gabon",
+            de:"Germany", gn:"Guinea", hu:"Hungary", is:"Iceland", id:"Indonesia",
+            ie:"Ireland", it:"Italy", lt:"Lithuania", lu:"Luxembourg", ml:"Mali",
+            mx:"Mexico", mc:"Monaco", nl:"Netherlands", ng:"Nigeria", no:"Norway",
+            pe:"Peru", pl:"Poland", ro:"Romania", ru:"Russia", sl:"Sierra Leone",
+            se:"Sweden", ch:"Switzerland", th:"Thailand", ua:"Ukraine", ye:"Yemen",
+            "gb-eng":"England"
+        };
+
+        const isoFilter = (code) => /^[a-z]{2}$/.test(code) || /^gb-/.test(code);
+
+        async function loadNations() {
+            try {
+                const r = await fetch('https://flagcdn.com/en/codes.json', { cache: "force-cache" });
+                const codes = await r.json();
+                const list = Object.entries(codes).filter(([c]) => isoFilter(c));
+                if (list.length < 50) throw new Error("suspiciously short");
+                return list;
+            } catch (e) {
+                console.warn("codes.json nicht erreichbar, Fallback-Liste aktiv.", e);
+                return Object.entries(FALLBACK_NATIONS);
+            }
+        }
+
+        // catalog: id -> { name, url, origin }
+        const catalog = new Map();
+        const picker = document.getElementById('iso-picker');
+
+        function addGroup(label, entries) {
+            const g = document.createElement('optgroup');
+            g.label = label;
+            entries.forEach(([id, display]) => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.innerText = display;
+                if (id === state.id) opt.selected = true;
+                g.appendChild(opt);
+            });
+            picker.appendChild(g);
+        }
+
+        async function initCatalog() {
+            const nations = await loadNations();
+            nations.sort((a, b) => a[1].localeCompare(b[1]));
+
+            const nationEntries = nations.map(([iso, name]) => {
+                const id = `iso:${iso}`;
+                catalog.set(id, { name, url: cdnUrl(iso), origin: "FLAGCDN", label: iso.toUpperCase() });
+                return [id, `${iso.toUpperCase()} - ${name}`];
+            });
+
+            const orgEntries = ORGS.map(([code, name, url, origin]) => {
+                const id = `org:${code}`;
+                catalog.set(id, { name, url, origin, label: code });
+                return [id, `${code} - ${name}`];
+            });
+
+            const airlineEntries = AIRLINES.map(([iata, name]) => {
+                const id = `air:${iata}`;
+                catalog.set(id, { name, url: iataUrl(iata), origin: "DAISYCON", label: iata });
+                return [id, `${iata} - ${name}`];
+            });
+
+            addGroup('— NATIONS (ISO-3166) —', nationEntries);
+            addGroup('— INTERNATIONAL ORGS —', orgEntries);
+            addGroup('— AIRLINES (IATA) —', airlineEntries);
+
+            buildFlag();
+        }
+
+        // --------------------------------------------------------
+        // BILD-LADER & SAMPLER (PNG/SVG -> Voxel-Raster)
+        // --------------------------------------------------------
+        const imgCache = {};
+
+        function loadImg(src) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+                img.src = src;
+            });
+        }
+
+        async function loadSourceImage(url) {
+            if (imgCache[url]) return imgCache[url];
+            let img;
+            try {
+                img = await loadImg(url);
+            } catch (e) {
+                // CORS/Netz-Fallback über Proxy
+                img = await loadImg(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+            }
+            imgCache[url] = img;
+            return img;
+        }
+
+        function sampleImage(img, W) {
+            const iw = img.naturalWidth || img.width || 300;
+            const ih = img.naturalHeight || img.height || 200;
+            const H = Math.max(2, Math.round(W * ih / iw));
+            const cv = document.createElement('canvas');
+            cv.width = W; cv.height = H;
+            const ctx = cv.getContext('2d', { willReadFrequently: true });
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, W, H);
+            const px = ctx.getImageData(0, 0, W, H).data;
+
+            const cells = [];
+            for (let cy = 0; cy < H; cy++) {
+                for (let cx = 0; cx < W; cx++) {
+                    const i = (cy * W + cx) * 4;
+                    if (px[i + 3] < 100) continue; // transparent bleibt Luft
+                    cells.push({ cx, cy, r: px[i], g: px[i+1], b: px[i+2] });
+                }
+            }
+            return { W, H, cells };
+        }
+
+        // --------------------------------------------------------
+        // STATE & UI
+        // --------------------------------------------------------
+        const state = {
+            id: 'iso:de',
+            custom: null, // { name, url, origin, label, img? } für IATA/URL/Datei
+            res: 30,
+            scale: 1.0
+        };
+
+        function currentSource() {
+            return state.custom || catalog.get(state.id) || null;
+        }
+
+        picker.addEventListener('change', (e) => {
+            state.id = e.target.value;
+            state.custom = null;
+            scheduleRebuild(0);
+        });
+
+        // IATA-Code oder Bild-URL
+        const customInput = document.getElementById('custom-input');
+        function applyCustomInput() {
+            const v = customInput.value.trim();
+            if (!v) return;
+            if (/^[a-z0-9]{2}$/i.test(v)) {
+                state.custom = { name: `Airline ${v.toUpperCase()}`, url: iataUrl(v), origin: "DAISYCON", label: v.toUpperCase() };
+            } else if (/^https?:\/\//i.test(v)) {
+                state.custom = { name: "Custom URL", url: v, origin: "CUSTOM URL", label: "URL" };
+            } else {
+                simFlash('INVALID INPUT', '#ff0055');
+                return;
+            }
+            scheduleRebuild(0);
+        }
+        document.getElementById('custom-go').addEventListener('click', applyCustomInput);
+        customInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCustomInput(); });
+
+        // Lokaler Import: SVG / PNG / JPG (File-Picker + Drag&Drop)
+        const fileInput = document.getElementById('file-input');
+        document.getElementById('file-btn').addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => { if (e.target.files[0]) importFile(e.target.files[0]); });
+
+        const dropOverlay = document.getElementById('drop-overlay');
+        let dragDepth = 0;
+        window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; dropOverlay.classList.add('active'); });
+        window.addEventListener('dragleave', (e) => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; dropOverlay.classList.remove('active'); } });
+        window.addEventListener('dragover', (e) => e.preventDefault());
+        window.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dragDepth = 0;
+            dropOverlay.classList.remove('active');
+            const f = e.dataTransfer.files && e.dataTransfer.files[0];
+            if (f) importFile(f);
+        });
+
+        function importFile(file) {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                state.custom = { name: file.name, url, origin: "LOCAL FILE", label: "FILE", img };
+                scheduleRebuild(0);
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                simFlash('UNREADABLE FILE', '#ff0055');
+            };
+            img.src = url;
+        }
+
+        // Slider
+        document.getElementById('res-slider').addEventListener('input', (e) => {
+            state.res = parseInt(e.target.value, 10);
+            document.getElementById('res-val').innerText = state.res;
+            scheduleRebuild(150);
+        });
+        document.getElementById('size-slider').addEventListener('input', (e) => {
+            state.scale = parseFloat(e.target.value);
+            document.getElementById('size-val').innerText = state.scale.toFixed(1);
+            scheduleRebuild(150);
+        });
+
+        let rebuildTimer = null;
+        function scheduleRebuild(delay) {
+            clearTimeout(rebuildTimer);
+            rebuildTimer = setTimeout(buildFlag, delay);
+        }
+
+        // --------------------------------------------------------
+        // VOXEL SYSTEM (dynamische Auflösung & Blockgröße)
+        // --------------------------------------------------------
+        const boxMat = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff, roughness: 0.2, metalness: 0.1, clearcoat: 0.8, clearcoatRoughness: 0.2
+        });
+
+        let instancedMesh = null;
+        let blockData = [];
+        let waveAmp = 1.5;
+        let time = 0;
+        let buildToken = 0;
+
+        const simEl = document.getElementById('stat-sim');
+        function simFlash(text, color) {
+            simEl.innerText = text;
+            simEl.style.color = color;
+        }
+
+        async function buildFlag() {
+            const src = currentSource();
+            if (!src) return;
+            const token = ++buildToken;
+            simFlash('LOADING', '#ffaa00');
+
+            let img = src.img;
+            if (!img) {
+                try {
+                    img = await loadSourceImage(src.url);
+                } catch (e) {
+                    console.error('Quelle nicht ladbar:', src, e);
+                    simFlash('LOAD ERROR', '#ff0055');
+                    return;
+                }
+            }
+            if (token !== buildToken) return; // veralteter Build
+
+            let sampled;
+            try {
+                sampled = sampleImage(img, state.res);
+            } catch (e) {
+                console.error('Canvas-Sampling blockiert (CORS?):', e);
+                simFlash('CORS ERROR', '#ff0055');
+                return;
+            }
+            const { W, H, cells } = sampled;
+            if (cells.length === 0) {
+                simFlash('EMPTY IMAGE', '#ff0055');
+                return;
+            }
+
+            // Physische Maße: Breite ~30 Einheiten * Scale, unabhängig von der Auflösung
+            const flagUnitsW = 30 * state.scale;
+            const unit = flagUnitsW / W;
+            waveAmp = 1.5 * state.scale;
+
+            if (instancedMesh) {
+                scene.remove(instancedMesh);
+                instancedMesh.geometry.dispose();
+                instancedMesh.dispose();
+            }
+
+            const boxGeo = new THREE.BoxGeometry(unit * 0.9, unit * 0.9, unit * 0.45);
+            instancedMesh = new THREE.InstancedMesh(boxGeo, boxMat, cells.length);
+            instancedMesh.castShadow = true;
+            instancedMesh.receiveShadow = true;
+
+            const color = new THREE.Color();
+            blockData = [];
+
+            const offX = -(W * unit) / 2 + unit / 2;
+            const offY = -(H * unit) / 2 + unit / 2;
+            const phaseScale = 9 / W; // entspricht 0.3 bei W=30 (Original-Wellenlook)
+
+            cells.forEach((c, i) => {
+                color.setRGB(c.r / 255, c.g / 255, c.b / 255);
+                instancedMesh.setColorAt(i, color);
+
+                const targetX = offX + c.cx * unit;
+                const targetY = offY + (H - 1 - c.cy) * unit; // Canvas y läuft nach unten
+                const startY = targetY + 30 + Math.random() * 20;
+
+                blockData.push({
+                    idx: i, x: targetX, y: targetY, currentY: startY,
+                    speed: 0.2 + Math.random() * 0.3,
+                    wf: W > 1 ? c.cx / (W - 1) : 0,
+                    phase: c.cx * phaseScale
+                });
+            });
+
+            instancedMesh.instanceColor.needsUpdate = true;
+            scene.add(instancedMesh);
+
+            // HUD Updates
+            document.getElementById('stat-iso').innerText = src.label || '--';
+            document.getElementById('stat-src').innerText = src.origin || '--';
+            document.getElementById('stat-grid').innerText = `${W}×${H}`;
+            document.getElementById('block-count').innerText = cells.length;
+            simFlash('ACTIVE', '#00ff99');
+            time = 0;
+        }
+
+        initCatalog();
+
+        // --------------------------------------------------------
+        // ANIMATION & WIND PHYSIK
+        // --------------------------------------------------------
+        const dummy = new THREE.Object3D();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            time += 0.05;
+
+            if (instancedMesh && blockData.length > 0) {
+                for (let i = 0; i < blockData.length; i++) {
+                    const b = blockData[i];
+
+                    if (b.currentY > b.y) {
+                        b.currentY -= b.speed;
+                        b.speed *= 1.05;
+                        if (b.currentY < b.y) b.currentY = b.y;
+                    }
+
+                    const waveZ = Math.sin(time + b.phase) * (waveAmp * b.wf);
+
+                    dummy.position.set(b.x, b.currentY, waveZ);
+                    dummy.rotation.y = Math.cos(time + b.phase) * (0.2 * b.wf);
+                    dummy.updateMatrix();
+
+                    instancedMesh.setMatrixAt(b.idx, dummy.matrix);
+                }
+                instancedMesh.instanceMatrix.needsUpdate = true;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
